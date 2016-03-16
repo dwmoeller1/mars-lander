@@ -1,0 +1,272 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+class Class3
+{
+    static int X, Y, hSpeed, vSpeed, rotate, power, maxYSpeed, maxXSpeed, turnsToMTZ, turnsToLanding, fuel, surfaceN;
+    static string answer;
+    static Tuple<int, int, int> landingArea;
+    static double g;
+
+    static void Main(string[] args)
+    {
+        string[] inputs;
+        g = -3.711;
+        surfaceN = int.Parse(Console.ReadLine()); // the number of points used to draw the surface of Mars.
+        int previousY = 3000;
+        int previousX = 0;
+        for (int i = 0; i < surfaceN; i++)
+        {
+            inputs = Console.ReadLine().Split(' ');
+            int landX = int.Parse(inputs[0]); // X coordinate of a surface point. (0 to 6999)
+            int landY = int.Parse(inputs[1]); // Y coordinate of a surface point. By linking all the points together in a sequential fashion, you form the surface of Mars.
+            if (landY == previousY)
+                landingArea = new Tuple<int, int, int>(previousX, landX, landY);
+            previousX = landX;
+            previousY = landY;
+        }
+
+        // game loop
+        while (true)
+        {
+            inputs = Console.ReadLine().Split(' ');
+            X = int.Parse(inputs[0]);
+            Y = int.Parse(inputs[1]);
+            hSpeed = int.Parse(inputs[2]); // the horizontal speed (in m/s), can be negative.
+            vSpeed = int.Parse(inputs[3]); // the vertical speed (in m/s), can be negative.
+            fuel = int.Parse(inputs[4]); // the quantity of remaining fuel in liters.
+            rotate = int.Parse(inputs[5]); // the rotation angle in degrees (-90 to 90).
+            power = int.Parse(inputs[6]); // the thrust power (0 to 4).
+
+            TurnsToLanding();
+            double landingX = hSpeed * turnsToLanding + X;
+            Console.Error.WriteLine("turnsToLanding = " + turnsToLanding.ToString());
+            Console.Error.WriteLine("landingX = " + landingX.ToString());
+            Console.Error.WriteLine(landingArea.Item1.ToString() + " " + landingArea.Item2.ToString());
+            if (hSpeed == 0)
+            {
+                Console.Error.WriteLine("1");
+                if (X < landingArea.Item1)
+                {
+                    rotate = -15;
+                    IncreaseThrust();
+                }
+                else if (X > landingArea.Item2)
+                {
+                    rotate = 15;
+                    IncreaseThrust();
+                }
+                else
+                {
+                    if (vSpeed < -39)
+                        IncreaseThrust();
+                    else
+                        DecreaseThrust();
+                }
+            }
+            else if (HeadingTowardLZ() && vSpeed <= -40 && turnsToMTZ >= 0)
+            {
+                Console.Error.WriteLine("2");
+                if (landingX < landingArea.Item1 + 50 && hSpeed > 0 ||
+                    landingX > landingArea.Item2 - 50 && hSpeed < 0)
+                    IncreaseHSpeed(15);
+                else if (landingX < landingArea.Item1 && hSpeed < 0 ||
+                    landingX > landingArea.Item2 && hSpeed > 0 ||
+                    (hSpeed < -20 || hSpeed > 20))
+                    DecreaseHSpeed(21);
+                else
+                {
+                    RotateTo(0);
+                    IncreaseThrust();
+                }
+            }
+            else if (HeadingTowardLZ() && vSpeed > -40 && turnsToMTZ > 0)
+            {
+                Console.Error.WriteLine("3");
+                if (landingX < landingArea.Item1 + 50 && hSpeed > 0 ||
+                    landingX > landingArea.Item2 - 50 && hSpeed < 0)
+                {
+                    if ((hSpeed < -20 || hSpeed > 20) && vSpeed <=0)
+                        DecreaseHSpeed(15);
+                    else if(vSpeed>0 && Y>landingArea.Item3)
+                    {
+                        TiltToward(30);
+                    }
+                    else
+                    {
+                        RotateTo(0);
+                        IncreaseThrust();
+                    }
+                }
+                else if (landingX < landingArea.Item1 && hSpeed < 0 ||
+                    landingX > landingArea.Item2 && hSpeed > 0 ||
+                    (hSpeed < -20 || hSpeed > 20))
+                    DecreaseHSpeed(15);
+                else
+                {
+                    RotateTo(0);
+                    DecreaseThrust();
+                }
+            }
+            else if (OverLZ(X) && (landingX < landingArea.Item1 + 50 || landingX > landingArea.Item2 - 50) && turnsToMTZ > 0)
+            {
+                Console.Error.WriteLine("4");
+                if (vSpeed > -40)
+                    DecreaseHSpeed(45);
+                else if (!OverLZ(landingX))
+                    DecreaseHSpeed(21);
+            }
+            else if (OverLZ(X) && hSpeed >= -20 && hSpeed <= 20)
+            {
+                Console.Error.WriteLine("5");
+                RotateTo(0);
+                if (turnsToMTZ <= 0)
+                    IncreaseThrust();
+                else
+                    DecreaseThrust();
+                Console.Error.WriteLine(power.ToString());
+            }
+            else if(!HeadingTowardLZ())
+                DecreaseHSpeed(15);
+            else
+            {
+                Console.Error.WriteLine("6");
+                Console.Error.WriteLine("turnsToMTZ= "+turnsToMTZ.ToString());
+                RotateTo(0);
+                if (turnsToMTZ <=0)
+                    IncreaseThrust();
+                else
+                    DecreaseThrust();
+            }
+
+            // Write an action using Console.WriteLine()
+            // To debug: Console.Error.WriteLine("Debug messages...");
+            string answer = rotate.ToString() + " " + power.ToString();
+
+            Console.WriteLine(answer); // rotate power. rotate is the desired rotation angle. power is the desired thrust power.
+        }
+    }
+
+    static void TurnsToLanding()
+    {
+        turnsToMTZ = -1;
+        int tMTZ = 0;
+        double v1;
+        double d1, dToT4, d2, vAtT4, height;
+        double heightAfterMTZ = X;
+
+        for (int t = 0; t < 500; t++)
+        {
+            v1 = g * t + vSpeed;
+            d1 = vSpeed * t + 0.5 * g * t * t;
+            height = Y + d1 - landingArea.Item3;
+            dToT4 = (3 * v1 + 4.5 * g + 7);
+            vAtT4 = v1 + 3 * g + 6;
+            d2 = (40 * 40 - vAtT4 * vAtT4) / (2 * (g + 4)) + dToT4;
+            if (height + d2 < 0)
+            {
+                turnsToMTZ = t - 1;
+                break;
+            }
+            heightAfterMTZ = height + d2;
+            tMTZ = (int)((-40 - vAtT4) / (g + 4)) + 3;
+        }
+        if (turnsToMTZ < 0)
+            turnsToLanding = -1;
+        else
+            turnsToLanding = (int)(turnsToMTZ + tMTZ + heightAfterMTZ / 40);
+    }
+
+    static void RotateToZero()
+    {
+        if (rotate < 0)
+            rotate = rotate + 15;
+        else if (rotate > 0)
+            rotate = rotate - 15;
+    }
+
+    static void TiltToward(int maxAngle = 90)
+    {
+        if (hSpeed < 0)
+        {
+            if (rotate + 15 > maxAngle)
+                rotate = maxAngle;
+            else
+                rotate += 15;
+        }
+        if (hSpeed > 0)
+        {
+            if (rotate - 15 < -maxAngle)
+                rotate = -maxAngle;
+            else
+                rotate -= 15;
+        }
+    }
+
+    static void TiltAway(int maxAngle = 90)
+    {
+        if (hSpeed < 0)
+        {
+            if (rotate - 15 < -maxAngle)
+                rotate = -maxAngle;
+            else
+                rotate -= 15;
+        }
+        if (hSpeed > 0)
+        {
+            if (rotate + 15 > maxAngle)
+                rotate = maxAngle;
+            else
+                rotate += 15;
+        }
+    }
+
+    static void IncreaseThrust()
+    {
+        power = Math.Min(power + 1, 4);
+    }
+
+    static void DecreaseThrust()
+    {
+        power = Math.Max(power - 1, 0);
+    }
+
+    static void DecreaseHSpeed(int maxAngle = 90)
+    {
+            TiltAway(maxAngle);
+            IncreaseThrust();
+    }
+
+    static void IncreaseHSpeed(int maxAngle = 90)
+    {
+            TiltToward(maxAngle);
+            IncreaseThrust();
+    }
+
+    static void RotateTo(int angle)
+    {
+        if (rotate < angle)
+            rotate = Math.Min(rotate + 15, angle);
+        else if (rotate > angle)
+            rotate = Math.Max(rotate - 15, angle);
+    }
+
+    static bool HeadingTowardLZ()
+    {
+        if (hSpeed < 0 && X > landingArea.Item2 ||
+            hSpeed > 0 && X < landingArea.Item1)
+            return true;
+        else
+            return false;
+    }
+
+    static bool OverLZ(double x)
+    {
+        if (x < landingArea.Item2 && x > landingArea.Item1)
+            return true;
+        else
+            return false;
+    }
+}
